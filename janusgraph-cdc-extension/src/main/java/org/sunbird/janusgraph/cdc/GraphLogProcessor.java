@@ -106,8 +106,17 @@ public class GraphLogProcessor {
 
         try {
             LogProcessorFramework framework = JanusGraphFactory.openTransactionLog(graph);
+            // No setProcessorIdentifier(): an identified processor persists its read
+            // marker and resumes it on every restart, ignoring setStartTime() after the
+            // first run. That forces replay of old/backlogged transaction-log entries on
+            // every JanusGraph restart, and vertex property lookups on those replayed
+            // entries come back empty (JanusGraph/storage limitation), which makes
+            // SunbirdLegacyMessageConverter treat every backlogged vertex as
+            // objectType="vertex" and filter it out — i.e. CDC silently stops emitting
+            // events after any stop/start. Staying unidentified means we always start
+            // fresh from setStartTime() below, trading "replay the outage window" for
+            // "CDC actually works after a restart."
             framework.addLogProcessor(LOG_IDENTIFIER)
-                    .setProcessorIdentifier("janusgraph-cdc-processor")
                     .setStartTime(Instant.now().minus(1, ChronoUnit.MINUTES))
                     .addProcessor(new ChangeProcessor() {
                         @Override
